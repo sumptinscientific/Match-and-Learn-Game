@@ -1,4 +1,7 @@
-<!DOCTYPE html>
+# Generate an upgraded, mobile-friendly Sumptin' Scientific match game with footer, topics, sounds, settings,
+# local high scores, device leaderboard, share button, and a clear extension point for online leaderboards.
+
+html = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -42,9 +45,9 @@
   h1{margin:.2rem 0;font-size:1.2rem}
   .subtitle{opacity:.9;margin-top:2px;font-size:.9rem}
 
-  main{padding: 12px 14px; max-width:960px; margin:0 auto;}
+  main{padding: 12px 14px; max-width:1100px; margin:0 auto;}
   .board{display:grid; gap:12px; grid-template-columns: 1fr;}
-  @media (min-width: 880px){ .board{grid-template-columns: 320px 1fr;} }
+  @media (min-width: 940px){ .board{grid-template-columns: 360px 1fr;} }
 
   .panel{
     background:rgba(0,0,0,.14);
@@ -55,7 +58,7 @@
   }
 
   label{display:block;margin:.5rem 0 .25rem .1rem;opacity:.9;font-size:.95rem}
-  select,button{
+  select,button,input[type="range"]{
     width:100%;padding:14px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.14);
     background:#123c40;color:var(--cream);outline:none;font-size:1rem;
   }
@@ -63,6 +66,9 @@
     background:linear-gradient(180deg,var(--amber),#b87a19);
     color:#231b14;border:none;font-weight:800;letter-spacing:.3px;cursor:pointer;
   }
+  .row{display:flex; gap:8px; flex-wrap:wrap}
+  .row > *{flex:1}
+
   .stats{display:flex; gap:8px; flex-wrap:wrap; margin:.6rem 0 0}
   .stat{background:#123c40;border:1px solid rgba(255,255,255,.12); padding:.45rem .6rem; border-radius:10px; font-weight:700; font-size:.95rem}
 
@@ -105,6 +111,30 @@
   .score-xl{font-size:2rem; font-weight:900; margin-top:6px}
   .pill{display:inline-block; padding:.25rem .6rem; border-radius:100px; background:#123c40; border:1px solid rgba(255,255,255,.15); margin:4px 4px}
   .muted{opacity:.75}
+
+  /* Settings drawer */
+  .drawer{
+    position:fixed; right:0; top:0; height:100%; width:min(92vw, 420px);
+    background:#0b3b3f; border-left:1px solid rgba(255,255,255,.12);
+    box-shadow:-6px 0 24px rgba(0,0,0,.25);
+    transform:translateX(100%); transition:.25s transform; z-index:30; padding:16px;
+    overflow:auto;
+  }
+  .drawer.open{ transform:translateX(0) }
+  .drawer h2{margin:6px 0 10px}
+  .toggle{display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px dashed rgba(255,255,255,.12)}
+
+  /* Footer bar */
+  .site-footer{
+    margin:16px auto 22px;
+    max-width:1100px;
+    padding:10px 14px;
+    display:flex; gap:8px; align-items:center; justify-content:center;
+    opacity:.85; font-size:.92rem;
+    border-top:1px solid rgba(255,255,255,.08);
+  }
+  .site-footer a{color:var(--mint); text-decoration:none}
+  .site-footer a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -116,23 +146,43 @@
       <div class="subtitle">Match & Learn — built for mobile</div>
     </div>
   </div>
+  <div class="row" style="max-width:420px">
+    <button id="shareBtn" title="Share" style="flex:0 0 auto;background:#123c40">Share</button>
+    <button id="settingsBtn" title="Settings" style="flex:0 0 auto;background:#123c40">Settings</button>
+  </div>
 </header>
 
 <main>
   <div class="board">
     <section class="panel">
       <h1>Choose Your Challenge</h1>
-      <p class="subtitle">Tap to match terms with their definitions before time runs out. Bigger buttons, faster flow, pocket-friendly.</p>
+      <p class="subtitle">Tap to match terms with their definitions before time runs out. Bigger buttons, faster flow, pocket‑friendly.</p>
 
-      <label for="category">Category</label>
-      <select id="category"></select>
+      <label for="subject">Subject</label>
+      <select id="subject"></select>
 
-      <label for="difficulty">Difficulty</label>
-      <select id="difficulty">
-        <option value="easy">Easy — more time, foundational terms</option>
-        <option value="medium" selected>Medium — balanced time, mixed terms</option>
-        <option value="hard">Hard — quick timer, advanced terms</option>
-      </select>
+      <label for="topic">Topic</label>
+      <select id="topic"><option value="all">All topics</option></select>
+
+      <div class="row">
+        <div>
+          <label for="difficulty">Difficulty</label>
+          <select id="difficulty">
+            <option value="easy">Easy — more time, foundational terms</option>
+            <option value="medium" selected>Medium — balanced time, mixed terms</option>
+            <option value="hard">Hard — quick timer, advanced terms</option>
+          </select>
+        </div>
+        <div>
+          <label for="pairCount">Pairs per round</label>
+          <select id="pairCount">
+            <option value="6">6</option>
+            <option value="8" selected>8</option>
+            <option value="10">10</option>
+            <option value="12">12</option>
+          </select>
+        </div>
+      </div>
 
       <div class="stats">
         <div class="stat" id="timer">⏱️ 00:00</div>
@@ -144,6 +194,11 @@
       <div class="footer">
         <button class="cta" id="startBtn">Start Game</button>
         <div class="muted" id="pairsInfo"></div>
+      </div>
+
+      <div style="margin-top:10px">
+        <h3 style="margin:.2rem 0">Device Leaderboard</h3>
+        <div id="leaderboard" class="muted" style="font-size:.95rem"></div>
       </div>
     </section>
 
@@ -165,58 +220,129 @@
   </div>
 </main>
 
+<!-- Footer -->
+<div class="site-footer">
+  <span>Made for Sumptin’ Scientific | © 2025 Sumptin’ Scientific | </span>
+  <a href="https://www.sumptinscientific.com" target="_blank" rel="noopener noreferrer">www.sumptinscientific.com</a>
+</div>
+
+<!-- Settings Drawer -->
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Settings">
+  <h2>Settings</h2>
+  <div class="toggle">
+    <span>Sound effects</span>
+    <label>
+      <input type="checkbox" id="soundToggle" checked />
+      <span> On</span>
+    </label>
+  </div>
+  <div class="toggle">
+    <span>Timer multiplier</span>
+    <div style="min-width:42%">
+      <input type="range" id="timeMultiplier" min="0.5" max="1.5" step="0.1" value="1" />
+      <div class="muted" id="timeMultLabel">1.0×</div>
+    </div>
+  </div>
+  <div class="toggle">
+    <span>Theme accent</span>
+    <select id="themeAccent">
+      <option value="mint" selected>Mint</option>
+      <option value="amber">Amber</option>
+      <option value="cream">Cream</option>
+    </select>
+  </div>
+  <p class="muted" style="margin-top:10px">Tip: To enable a global leaderboard or head‑to‑head play, connect to a small backend (Google Sheets + Apps Script works). See the inline comment in the code.</p>
+</aside>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
+/* ------------------------ DATA ------------------------
+  Subjects with topics and tagged terms for variety and replay.
+  Each item: {term, def, diff, topics:[...]}
+-------------------------------------------------------*/
 const DATA = {
   "Cell Biology": [
-    {term:"Mitochondrion", def:"Organelle that produces ATP via oxidative phosphorylation.", diff:"easy"},
-    {term:"Ribosome", def:"Molecular machine that synthesizes proteins from mRNA.", diff:"easy"},
-    {term:"Endoplasmic Reticulum", def:"Network of membranes for protein and lipid processing.", diff:"medium"},
-    {term:"Golgi Apparatus", def:"Stacked membranes that modify and sort proteins and lipids.", diff:"medium"},
-    {term:"Lysosome", def:"Acidic vesicle that digests macromolecules and debris.", diff:"easy"},
-    {term:"Peroxisome", def:"Organelle that performs fatty acid oxidation and detoxifies hydrogen peroxide.", diff:"medium"},
-    {term:"Cytoskeleton", def:"Network of filaments that provides structure and drives movement.", diff:"easy"},
-    {term:"Actin", def:"Thin filaments involved in cell shape, motility, and muscle contraction.", diff:"medium"},
-    {term:"Microtubule", def:"Hollow polymers of tubulin that form tracks for transport and mitotic spindle.", diff:"hard"},
-    {term:"Signal Peptide", def:"Short N-terminal sequence that directs a protein to the secretory pathway.", diff:"hard"}
+    {term:"Mitochondrion", def:"Organelle that produces ATP via oxidative phosphorylation.", diff:"easy", topics:["organelles","metabolism"]},
+    {term:"Ribosome", def:"Molecular machine that synthesizes proteins from mRNA.", diff:"easy", topics:["organelles","protein synthesis"]},
+    {term:"Endoplasmic Reticulum", def:"Membrane network for protein and lipid processing.", diff:"medium", topics:["organelles","protein synthesis"]},
+    {term:"Golgi Apparatus", def:"Stacked membranes that modify and sort proteins and lipids.", diff:"medium", topics:["organelles","secretion"]},
+    {term:"Lysosome", def:"Acidic vesicle that digests macromolecules and debris.", diff:"easy", topics:["organelles","degradation"]},
+    {term:"Peroxisome", def:"Performs fatty acid oxidation and detoxifies H2O2.", diff:"medium", topics:["organelles","metabolism"]},
+    {term:"Cytoskeleton", def:"Filament network providing structure and movement.", diff:"easy", topics:["cytoskeleton"]},
+    {term:"Actin", def:"Thin filaments for shape, motility, contraction.", diff:"medium", topics:["cytoskeleton"]},
+    {term:"Microtubule", def:"Hollow tubulin polymers for transport and mitosis.", diff:"hard", topics:["cytoskeleton","cell division"]},
+    {term:"Signal Peptide", def:"N‑terminal sequence directing proteins to ER.", diff:"hard", topics:["protein targeting"]},
+    {term:"Autophagy", def:"Self‑digestion pathway recycling cytoplasmic material.", diff:"hard", topics:["degradation"]},
+    {term:"Exocytosis", def:"Vesicle fusion releasing cargo outside the cell.", diff:"medium", topics:["secretion"]},
+    {term:"Endocytosis", def:"Uptake of extracellular material via vesicles.", diff:"medium", topics:["trafficking"]}
   ],
   "Genetics": [
-    {term:"Gene", def:"DNA sequence that encodes a functional product (RNA or protein).", diff:"easy"},
-    {term:"Allele", def:"One of multiple versions of a gene at a particular locus.", diff:"easy"},
-    {term:"Genotype", def:"Genetic makeup of an organism at a locus or set of loci.", diff:"easy"},
-    {term:"Phenotype", def:"Observable traits produced by genotype and environment.", diff:"easy"},
-    {term:"Homozygous", def:"Having two identical alleles at a locus.", diff:"medium"},
-    {term:"Heterozygous", def:"Having two different alleles at a locus.", diff:"medium"},
-    {term:"Linkage Disequilibrium", def:"Non-random association of alleles at different loci.", diff:"hard"},
-    {term:"Penetrance", def:"Probability that a genotype expresses its associated phenotype.", diff:"hard"},
-    {term:"Epistasis", def:"Interaction where one gene’s effect depends on another gene.", diff:"hard"},
-    {term:"CRISPR-Cas9", def:"Genome editing system using guide RNA and nuclease to cut DNA.", diff:"medium"}
+    {term:"Gene", def:"DNA sequence encoding a functional product.", diff:"easy", topics:["basics"]},
+    {term:"Allele", def:"Alternate version of a gene at a locus.", diff:"easy", topics:["basics"]},
+    {term:"Genotype", def:"Genetic makeup at one or more loci.", diff:"easy", topics:["basics"]},
+    {term:"Phenotype", def:"Observable trait from genotype and environment.", diff:"easy", topics:["basics"]},
+    {term:"Homozygous", def:"Two identical alleles at a locus.", diff:"medium", topics:["inheritance"]},
+    {term:"Heterozygous", def:"Two different alleles at a locus.", diff:"medium", topics:["inheritance"]},
+    {term:"Linkage Disequilibrium", def:"Non‑random association of alleles at loci.", diff:"hard", topics:["population genetics"]},
+    {term:"Penetrance", def:"Probability a genotype expresses its phenotype.", diff:"hard", topics:["inheritance"]},
+    {term:"Epistasis", def:"Effect of one gene depends on another.", diff:"hard", topics:["inheritance"]},
+    {term:"CRISPR‑Cas9", def:"Guide RNA and nuclease used to edit DNA.", diff:"medium", topics:["genome editing"]},
+    {term:"Promoter", def:"DNA sequence where RNA polymerase binds to start transcription.", diff:"medium", topics:["gene regulation"]},
+    {term:"Enhancer", def:"Regulatory DNA that increases gene transcription.", diff:"hard", topics:["gene regulation"]}
   ],
   "Microbiology": [
-    {term:"Gram-positive", def:"Bacteria with thick peptidoglycan cell walls that retain crystal violet.", diff:"easy"},
-    {term:"Facultative Anaerobe", def:"Organism that can grow with or without oxygen.", diff:"medium"},
-    {term:"Obligate Aerobe", def:"Organism requiring oxygen for growth.", diff:"easy"},
-    {term:"Biofilm", def:"Community of microbes embedded in a protective extracellular matrix.", diff:"medium"},
-    {term:"Quorum Sensing", def:"Cell-density–dependent regulation of gene expression in bacteria.", diff:"hard"},
-    {term:"Plaque Assay", def:"Method to quantify infectious phage or viruses by forming clear zones.", diff:"hard"},
-    {term:"Endospore", def:"Dormant, tough, non-reproductive structure formed by some bacteria.", diff:"medium"},
-    {term:"LPS (Endotoxin)", def:"Outer membrane component of Gram-negatives that triggers inflammation.", diff:"hard"}
+    {term:"Gram‑positive", def:"Thick peptidoglycan cell wall; retains crystal violet.", diff:"easy", topics:["bacteria"]},
+    {term:"Gram‑negative", def:"Outer membrane with LPS; thin peptidoglycan.", diff:"easy", topics:["bacteria"]},
+    {term:"Facultative Anaerobe", def:"Grows with or without oxygen.", diff:"medium", topics:["metabolism"]},
+    {term:"Obligate Aerobe", def:"Requires oxygen for growth.", diff:"easy", topics:["metabolism"]},
+    {term:"Biofilm", def:"Microbial community in extracellular matrix.", diff:"medium", topics:["ecology"]},
+    {term:"Quorum Sensing", def:"Density‑dependent regulation of gene expression.", diff:"hard", topics:["signaling"]},
+    {term:"Plaque Assay", def:"Quantifies infectious phage/viruses.", diff:"hard", topics:["virology"]},
+    {term:"Endospore", def:"Dormant, tough structure in some bacteria.", diff:"medium", topics:["bacteria"]},
+    {term:"LPS (Endotoxin)", def:"Triggers inflammation from Gram‑negatives.", diff:"hard", topics:["immunology"]}
   ],
   "Human Anatomy & Physiology": [
-    {term:"Homeostasis", def:"Maintenance of stable internal conditions via feedback mechanisms.", diff:"easy"},
-    {term:"Action Potential", def:"Rapid membrane depolarization and repolarization in excitable cells.", diff:"medium"},
-    {term:"Sarcomere", def:"Contractile unit of striated muscle composed of actin and myosin.", diff:"medium"},
-    {term:"Alveoli", def:"Tiny lung sacs where gas exchange occurs.", diff:"easy"},
-    {term:"Nephron", def:"Functional unit of the kidney that filters blood and forms urine.", diff:"medium"},
-    {term:"Insulin", def:"Pancreatic hormone that lowers blood glucose and promotes storage.", diff:"easy"},
-    {term:"SA Node", def:"Pacemaker region initiating heartbeat in the right atrium.", diff:"hard"},
-    {term:"Blood-Brain Barrier", def:"Selective barrier formed by tight junctions and astrocytes protecting CNS.", diff:"hard"}
+    {term:"Homeostasis", def:"Stable internal conditions via feedback.", diff:"easy", topics:["basics"]},
+    {term:"Action Potential", def:"Rapid depolarization/repolarization in neurons.", diff:"medium", topics:["neuro"]},
+    {term:"Sarcomere", def:"Contractile unit of striated muscle.", diff:"medium", topics:["muscle"]},
+    {term:"Alveoli", def:"Tiny lung sacs for gas exchange.", diff:"easy", topics:["respiratory"]},
+    {term:"Nephron", def:"Functional unit of the kidney.", diff:"medium", topics:["renal"]},
+    {term:"Insulin", def:"Hormone that lowers blood glucose.", diff:"easy", topics:["endocrine"]},
+    {term:"SA Node", def:"Pacemaker initiating heartbeat.", diff:"hard", topics:["cardio"]},
+    {term:"Blood‑Brain Barrier", def:"Selective barrier protecting CNS.", diff:"hard", topics:["neuro"]}
+  ],
+  "Biochemistry": [
+    {term:"Glycolysis", def:"Pathway converting glucose to pyruvate with ATP gain.", diff:"easy", topics:["metabolism"]},
+    {term:"TCA Cycle", def:"Mitochondrial cycle oxidizing acetyl‑CoA; produces NADH/FADH2.", diff:"medium", topics:["metabolism"]},
+    {term:"Oxidative Phosphorylation", def:"ATP synthesis driven by proton gradient.", diff:"hard", topics:["metabolism"]},
+    {term:"Michaelis–Menten Km", def:"Substrate concentration at half Vmax.", diff:"medium", topics:["enzymes"]},
+    {term:"Allosteric Regulation", def:"Effector binding changes enzyme activity.", diff:"medium", topics:["enzymes"]},
+    {term:"Beta‑oxidation", def:"Catabolism of fatty acids into acetyl‑CoA.", diff:"hard", topics:["metabolism"]}
+  ],
+  "Ecology": [
+    {term:"Carrying Capacity", def:"Max population size environment can sustain.", diff:"easy", topics:["populations"]},
+    {term:"Niche", def:"Role and position a species has in its environment.", diff:"easy", topics:["communities"]},
+    {term:"Keystone Species", def:"Disproportionate effect on community structure.", diff:"medium", topics:["communities"]},
+    {term:"Trophic Level", def:"Position in a food chain.", diff:"easy", topics:["energy"]},
+    {term:"Primary Succession", def:"Colonization of lifeless area; no soil initially.", diff:"medium", topics:["succession"]},
+    {term:"Eutrophication", def:"Nutrient enrichment causing algal blooms.", diff:"medium", topics:["aquatic"]}
+  ],
+  "Neuroscience": [
+    {term:"Synapse", def:"Junction where neurons communicate.", diff:"easy", topics:["cells"]},
+    {term:"Neurotransmitter", def:"Chemical messenger released by neurons.", diff:"easy", topics:["chemistry"]},
+    {term:"Long‑term Potentiation", def:"Persistent strengthening of synapses.", diff:"hard", topics:["plasticity"]},
+    {term:"Myelin", def:"Insulating sheath that speeds conduction.", diff:"medium", topics:["cells"]},
+    {term:"Dopamine", def:"Modulator of reward, motivation, movement.", diff:"medium", topics:["chemistry"]},
+    {term:"Glia", def:"Support cells incl. astrocytes, oligodendrocytes, microglia.", diff:"medium", topics:["cells"]}
   ]
 };
 
-const categorySel = document.getElementById('category');
+/* ---------------------- Utility helpers ---------------------- */
+const subjectSel = document.getElementById('subject');
+const topicSel = document.getElementById('topic');
 const difficultySel = document.getElementById('difficulty');
+const pairCountSel = document.getElementById('pairCount');
 const startBtn = document.getElementById('startBtn');
 const grid = document.getElementById('grid');
 const timerEl = document.getElementById('timer');
@@ -231,34 +357,103 @@ const finalMsg = document.getElementById('finalMsg');
 const playAgain = document.getElementById('playAgain');
 const revealAnswersBtn = document.getElementById('revealAnswers');
 const answerKey = document.getElementById('answerKey');
+const shareBtn = document.getElementById('shareBtn');
+const settingsBtn = document.getElementById('settingsBtn');
+const drawer = document.getElementById('drawer');
+const soundToggle = document.getElementById('soundToggle');
+const timeMultiplier = document.getElementById('timeMultiplier');
+const timeMultLabel = document.getElementById('timeMultLabel');
+const themeAccent = document.getElementById('themeAccent');
+const leaderEl = document.getElementById('leaderboard');
 
-// Populate categories
-Object.keys(DATA).forEach(k => {
-  const opt = document.createElement('option');
-  opt.value = k; opt.textContent = k;
-  categorySel.appendChild(opt);
+/* Sounds (tiny data URIs) */
+const snd = {
+  correct: new Audio('data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAAAAACAgICA/////w8PDw8PDw8P'),
+  wrong:   new Audio('data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAAAAACAgP///wAAAP///w8PDw8P'),
+  tick:    new Audio('data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAAAAACAgICAgICAgICAgICAgICA'),
+  end:     new Audio('data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAAAAACAgP8AAP8A//////8AAA==')
+};
+Object.values(snd).forEach(a=>{ a.volume = 0.25; });
+
+/* Theme accent */
+themeAccent.addEventListener('change', () => {
+  document.documentElement.style.setProperty('--mint',
+    themeAccent.value==='amber' ? '#d08a1b' :
+    themeAccent.value==='cream' ? '#f6ecd6' : '#6ab9b6'
+  );
 });
 
+/* Share */
+shareBtn.addEventListener('click', async () => {
+  const url = location.href;
+  const title = "Sumptin’ Scientific — Match & Learn";
+  const text = "Test your biology & science knowledge in this quick, fun matching game!";
+  if (navigator.share){
+    try{ await navigator.share({title, text, url}); }catch(e){/* user cancelled */}
+  }else{
+    try{
+      await navigator.clipboard.writeText(url);
+      ping("Link copied to clipboard!");
+    }catch{ ping("Share this link: "+url); }
+  }
+});
+
+/* Settings drawer */
+settingsBtn.addEventListener('click', () => {
+  drawer.classList.toggle('open');
+  drawer.setAttribute('aria-hidden', drawer.classList.contains('open') ? 'false' : 'true');
+});
+timeMultiplier.addEventListener('input', () => {
+  timeMultLabel.textContent = `${Number(timeMultiplier.value).toFixed(1)}×`;
+});
+
+/* Populate subjects and topics */
+function initSubjects(){
+  Object.keys(DATA).forEach(k => {
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = k;
+    subjectSel.appendChild(opt);
+  });
+  subjectSel.selectedIndex = 0;
+  refreshTopics();
+}
+function refreshTopics(){
+  topicSel.innerHTML = '<option value="all">All topics</option>';
+  const subj = subjectSel.value;
+  const topicSet = new Set();
+  (DATA[subj] || []).forEach(item => (item.topics||[]).forEach(t=>topicSet.add(t)));
+  Array.from(topicSet).sort().forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t; opt.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+    topicSel.appendChild(opt);
+  });
+}
+subjectSel.addEventListener('change', refreshTopics);
+
+/* Core game state */
 let state = { pairs: [], timeLeft: 0, timerId: null, score: 0, streak: 0, selected: null };
+let cfg = {};
 
 function difficultyConfig(level){
   switch(level){
-    case 'easy': return { pairs: 6, time: 120, base: 100, penalty: 10 };
-    case 'medium': return { pairs: 8, time: 90, base: 120, penalty: 15 };
-    case 'hard': return { pairs: 10, time: 60, base: 150, penalty: 20 };
+    case 'easy': return { base: 100, penalty: 10, timePerPair: 18 };
+    case 'medium': return { base: 120, penalty: 15, timePerPair: 11 };
+    case 'hard': return { base: 150, penalty: 20, timePerPair: 7 };
   }
 }
-
-function selectByDifficulty(list, level, n){
+function selectPairs(list, level, n, topic){
+  const filtered = (topic && topic!=='all') ? list.filter(i => (i.topics||[]).includes(topic)) : list.slice();
+  // weight by difficulty proximity
   const weight = {easy:3, medium:2, hard:1};
   const pool = [];
-  list.forEach(item=>{
-    const w = item.diff===level?weight.easy : (level==='easy' && item.diff==='hard'?1: (item.diff==='medium'?2:1));
+  filtered.forEach(item=>{
+    const w = item.diff===level ? weight.easy : (item.diff==='medium'?2:1);
     for(let k=0;k<w;k++) pool.push(item);
   });
+  // unique picks
   const uniq = new Map();
-  while(uniq.size < Math.min(n, list.length)){
-    const pick = pool[Math.floor(Math.random()*pool.length)];
+  while(uniq.size < Math.min(n, filtered.length)){
+    const pick = pool[Math.floor(Math.random()*pool.length)] || filtered[Math.floor(Math.random()*filtered.length)];
     uniq.set(pick.term, pick);
   }
   return Array.from(uniq.values());
@@ -315,6 +510,7 @@ function onCardClick(e){
     state.score += cfg.base + 10*state.streak;
     state.streak += 1;
     updateStats();
+    if(soundToggle.checked) snd.correct.currentTime=0, snd.correct.play();
     ping(`+${cfg.base + 10*(state.streak-1)} points!`);
     if([...document.querySelectorAll('.card.term')].every(x=>x.classList.contains('correct'))){
       endGame();
@@ -325,6 +521,7 @@ function onCardClick(e){
     state.score = Math.max(0, state.score - cfg.penalty);
     state.streak = 0;
     updateStats();
+    if(soundToggle.checked) snd.wrong.currentTime=0, snd.wrong.play();
     ping(`-${cfg.penalty} points`, true);
   }
   state.selected = null;
@@ -335,12 +532,13 @@ function updateStats(){
   streakEl.textContent = `🔥 Streak: ${state.streak}`;
 }
 
-function startTimer(seconds){
-  state.timeLeft = seconds;
+function startTimer(totalSeconds){
+  state.timeLeft = Math.max(10, Math.round(totalSeconds * Number(timeMultiplier.value)));
   timerEl.textContent = fmtTime(state.timeLeft);
   clearInterval(state.timerId);
   state.timerId = setInterval(()=>{
     state.timeLeft -= 1;
+    if(state.timeLeft<=5 && soundToggle.checked){ snd.tick.currentTime=0; snd.tick.play(); }
     timerEl.textContent = fmtTime(state.timeLeft);
     if(state.timeLeft<=0){
       clearInterval(state.timerId);
@@ -363,20 +561,46 @@ function ping(msg, danger=false){
   setTimeout(()=>t.classList.remove('show'), 900);
 }
 
-let cfg={};
+/* Local storage keys */
+function keyHigh(subj, level, topic){ return `SS_high_${subj}_${level}_${topic||'all'}`; }
+function keyStreak(subj, level, topic){ return `SS_beststreak_${subj}_${level}_${topic||'all'}`; }
+function keyHistory(){ return `SS_history`; }
+
+function updateHighUI(subj, level, topic){
+  const hs = Number(localStorage.getItem(keyHigh(subj, level, topic))||0);
+  highScoreEl.textContent = `🏆 High: ${hs}`;
+}
+function pushHistory(entry){
+  const arr = JSON.parse(localStorage.getItem(keyHistory())||'[]');
+  arr.unshift(entry);
+  if(arr.length>12) arr.length = 12;
+  localStorage.setItem(keyHistory(), JSON.stringify(arr));
+  renderLeaderboard(arr);
+}
+function renderLeaderboard(arr){
+  const data = arr || JSON.parse(localStorage.getItem(keyHistory())||'[]');
+  leaderEl.innerHTML = data.length ?
+    data.map(e=>`<div class="pill">${e.date} • ${e.subj}${e.topic!=='all'?'/'+e.topic:''} • ${e.level} • Score ${e.score} • Streak ${e.streak}</div>`).join(' ')
+    : '<span class="muted">No scores yet — start a game!</span>';
+}
+
+/* Start/setup */
 function setupGame(){
-  const category = categorySel.value;
+  const subj = subjectSel.value;
+  const topic = topicSel.value || 'all';
   const level = difficultySel.value;
+  const pairsWanted = Number(pairCountSel.value);
   cfg = difficultyConfig(level);
-  const chosen = selectByDifficulty(DATA[category], level, cfg.pairs);
+
+  const chosen = selectPairs(DATA[subj], level, pairsWanted, topic);
   state.pairs = chosen;
-  pairsInfo.textContent = `Pairs: ${chosen.length} • ${category}`;
   state.score = 0; state.streak = 0; state.selected=null;
   updateStats();
   createCards(chosen);
-  startTimer(cfg.time);
-  const key = `SS_high_${category}_${level}`;
-  highScoreEl.textContent = `🏆 High: ${Number(localStorage.getItem(key)||0)}`;
+  const totalTime = cfg.timePerPair * chosen.length;
+  startTimer(totalTime);
+  updateHighUI(subj, level, topic);
+  pairsInfo.textContent = `Pairs: ${chosen.length} • ${subj}${topic!=='all'?' / '+topic:''}`;
   grid.onclick = onCardClick;
   document.getElementById('gameArea').scrollIntoView({behavior:'smooth', block:'start'});
 }
@@ -385,26 +609,60 @@ function endGame(){
   grid.innerHTML='';
   endScreen.classList.remove('hidden');
   finalScore.textContent = `Score: ${state.score}`;
-  const key = `SS_high_${categorySel.value}_${difficultySel.value}`;
-  const prev = Number(localStorage.getItem(key)||0);
-  if(state.score > prev){
-    localStorage.setItem(key, state.score);
-    highScoreEl.textContent = `🏆 High: ${state.score}`;
+  const subj = subjectSel.value;
+  const level = difficultySel.value;
+  const topic = topicSel.value || 'all';
+  const kH = keyHigh(subj, level, topic);
+  const kS = keyStreak(subj, level, topic);
+  const prevH = Number(localStorage.getItem(kH)||0);
+  const prevS = Number(localStorage.getItem(kS)||0);
+
+  if(state.score > prevH){
+    localStorage.setItem(kH, state.score);
     finalMsg.textContent = "New high score! Stellar work. 🚀";
   }else{
-    finalMsg.textContent = `High score to beat: ${prev}`;
+    finalMsg.textContent = `High score to beat: ${prevH} (best streak: ${prevS})`;
   }
+  if(state.streak > prevS){
+    localStorage.setItem(kS, state.streak);
+  }
+  updateHighUI(subj, level, topic);
   answerKey.innerHTML = '<h3>Answer Key</h3>' + state.pairs.map(p=>`<div class="pill"><strong>${p.term}</strong>: ${p.def}</div>`).join(' ');
+  if(soundToggle.checked) snd.end.currentTime=0, snd.end.play();
+
+  // Save history (device-only leaderboard)
+  const now = new Date();
+  pushHistory({
+    date: now.toLocaleDateString(),
+    subj, topic, level,
+    score: state.score,
+    streak: state.streak
+  });
 }
 
+/* Global leaderboard / Versus mode (Optional backend)
+   - Create a Google Sheet, and an Apps Script web app (doPost) that accepts JSON {name, score, subject, level, topic, timestamp}.
+   - From here, POST fetch() to that URL on endGame().
+   - To show a global leaderboard, fetch the Sheet data in read-only endpoint and render in a table.
+   - For real-time head‑to‑head, use a lightweight signaling service (Ably / Pusher channels) to pair two clients and send match state.
+*/
+
+/* Events */
 document.getElementById('startBtn').addEventListener('click', setupGame);
 document.getElementById('playAgain').addEventListener('click', setupGame);
 document.getElementById('revealAnswers').addEventListener('click', ()=>{
   answerKey.classList.toggle('hidden');
 });
 
-categorySel.selectedIndex = 0;
-pairsInfo.textContent = "Pairs: — • Category: —";
+/* Init */
+initSubjects();
+renderLeaderboard();
+pairsInfo.textContent = "Pairs: — • Subject: —";
 </script>
 </body>
 </html>
+"""
+path = "/mnt/data/ss_match_game_pro.html"
+with open(path, "w", encoding="utf-8") as f:
+    f.write(html)
+path
