@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Sumptin’ Scientific — Match & Learn</title>
+<meta name="theme-color" content="#0f4a4e">
+<style>
+  :root{
+    --bg:#0f4a4e;        /* deep teal */
+    --panel:#0b3b3f;    /* darker teal */
+    --cream:#f6ecd6;    /* warm cream for text */
+    --amber:#d08a1b;    /* warm amber (distinct from bright yellow) */
+    --mint:#6ab9b6;     /* accent teal */
+    --correct:#2aa36b;
+    --wrong:#d34b57;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--cream);
+    font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  header{
+    padding:14px 16px;
+    display:flex;gap:12px;align-items:center;justify-content:space-between;
+    background:linear-gradient(180deg,var(--panel),transparent);
+    position:sticky;top:0;z-index:10;
+    border-bottom:1px solid rgba(255,255,255,.07);
+  }
+  .brand{display:flex;gap:10px;align-items:center;font-weight:800;letter-spacing:.2px}
+  .bulb{
+    width:28px;height:28px;border-radius:50%;
+    position:relative;background:radial-gradient(circle at 35% 35%, #ffdca8 0 30%, var(--amber) 31%, #9c6610 100%);
+    box-shadow:0 0 20px rgba(208,138,27,.35);
+    flex:0 0 auto;
+  }
+  .bulb:after{
+    content:""; position:absolute; bottom:-6px; left:50%; transform:translateX(-50%);
+    width:16px; height:6px; border-radius:4px; background:var(--amber);
+    box-shadow:0 -7px 0 0 var(--amber), 0 -14px 0 0 var(--amber);
+  }
+  h1{margin:.2rem 0;font-size:1.2rem}
+  .subtitle{opacity:.9;margin-top:2px;font-size:.9rem}
+
+  main{padding: 12px 14px; max-width:960px; margin:0 auto;}
+  .board{display:grid; gap:12px; grid-template-columns: 1fr;}
+  @media (min-width: 880px){ .board{grid-template-columns: 320px 1fr;} }
+
+  .panel{
+    background:rgba(0,0,0,.14);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:14px;
+    padding:14px;
+    box-shadow:0 8px 24px rgba(0,0,0,.12);
+  }
+
+  label{display:block;margin:.5rem 0 .25rem .1rem;opacity:.9;font-size:.95rem}
+  select,button{
+    width:100%;padding:14px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.14);
+    background:#123c40;color:var(--cream);outline:none;font-size:1rem;
+  }
+  button.cta{
+    background:linear-gradient(180deg,var(--amber),#b87a19);
+    color:#231b14;border:none;font-weight:800;letter-spacing:.3px;cursor:pointer;
+  }
+  .stats{display:flex; gap:8px; flex-wrap:wrap; margin:.6rem 0 0}
+  .stat{background:#123c40;border:1px solid rgba(255,255,255,.12); padding:.45rem .6rem; border-radius:10px; font-weight:700; font-size:.95rem}
+
+  /* Touch-friendly grid */
+  .grid{display:grid; gap:10px; margin-top:10px; grid-template-columns: 1fr;}
+  @media (min-width:560px){ .grid{grid-template-columns:1fr 1fr} }
+  @media (min-width:1024px){ .grid{grid-template-columns:repeat(3,1fr)} }
+
+  .card{
+    background:#0c3134;
+    border:1px solid rgba(255,255,255,.12);
+    border-radius:14px;
+    padding:16px;
+    min-height:60px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    user-select:none; -webkit-user-select:none;
+    touch-action:manipulation;
+    transition: background .18s ease, transform .08s ease;
+    font-size:1.02rem; line-height:1.3;
+  }
+  .card.term{background:#123c40}
+  .card.definition{background:#0f2c2f}
+  .card.selected{outline:3px solid var(--mint); transform:scale(0.995)}
+  .card.correct{background:rgba(42,163,107,.2); border-color:rgba(42,163,107,.65)}
+  .card.wrong{background:rgba(211,75,87,.18); border-color:rgba(211,75,87,.55)}
+
+  .footer{margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; opacity:.9}
+  .hidden{display:none}
+
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:#102f33; border:1px solid rgba(255,255,255,.1);
+    padding:.6rem .9rem; border-radius:12px; box-shadow:0 12px 24px rgba(0,0,0,.2);
+    opacity:0; pointer-events:none; transition:.25s opacity, .25s transform;
+    font-size:.95rem;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-4px)}
+
+  .end-screen{ text-align:center; padding:24px 12px }
+  .score-xl{font-size:2rem; font-weight:900; margin-top:6px}
+  .pill{display:inline-block; padding:.25rem .6rem; border-radius:100px; background:#123c40; border:1px solid rgba(255,255,255,.15); margin:4px 4px}
+  .muted{opacity:.75}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="bulb" aria-hidden="true"></div>
+    <div>
+      <div style="font-size:1.05rem">Sumptin’ Scientific</div>
+      <div class="subtitle">Match & Learn — built for mobile</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="board">
+    <section class="panel">
+      <h1>Choose Your Challenge</h1>
+      <p class="subtitle">Tap to match terms with their definitions before time runs out. Bigger buttons, faster flow, pocket-friendly.</p>
+
+      <label for="category">Category</label>
+      <select id="category"></select>
+
+      <label for="difficulty">Difficulty</label>
+      <select id="difficulty">
+        <option value="easy">Easy — more time, foundational terms</option>
+        <option value="medium" selected>Medium — balanced time, mixed terms</option>
+        <option value="hard">Hard — quick timer, advanced terms</option>
+      </select>
+
+      <div class="stats">
+        <div class="stat" id="timer">⏱️ 00:00</div>
+        <div class="stat" id="score">⭐ Score: 0</div>
+        <div class="stat" id="streak">🔥 Streak: 0</div>
+        <div class="stat" id="highScore">🏆 High: 0</div>
+      </div>
+
+      <div class="footer">
+        <button class="cta" id="startBtn">Start Game</button>
+        <div class="muted" id="pairsInfo"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div id="gameArea">
+        <div class="grid" id="grid"></div>
+        <div class="end-screen hidden" id="endScreen">
+          <h2>Time!</h2>
+          <div class="score-xl" id="finalScore">Score: 0</div>
+          <p id="finalMsg" class="muted"></p>
+          <div style="margin-top:12px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap">
+            <button class="cta" id="playAgain">Play Again</button>
+            <button id="revealAnswers" style="background:#123c40;border:1px solid rgba(255,255,255,.15);color:var(--cream);padding:12px 14px;border-radius:12px;font-size:1rem">Show Answer Key</button>
+          </div>
+          <div id="answerKey" class="hidden" style="text-align:left;margin-top:14px"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const DATA = {
+  "Cell Biology": [
+    {term:"Mitochondrion", def:"Organelle that produces ATP via oxidative phosphorylation.", diff:"easy"},
+    {term:"Ribosome", def:"Molecular machine that synthesizes proteins from mRNA.", diff:"easy"},
+    {term:"Endoplasmic Reticulum", def:"Network of membranes for protein and lipid processing.", diff:"medium"},
+    {term:"Golgi Apparatus", def:"Stacked membranes that modify and sort proteins and lipids.", diff:"medium"},
+    {term:"Lysosome", def:"Acidic vesicle that digests macromolecules and debris.", diff:"easy"},
+    {term:"Peroxisome", def:"Organelle that performs fatty acid oxidation and detoxifies hydrogen peroxide.", diff:"medium"},
+    {term:"Cytoskeleton", def:"Network of filaments that provides structure and drives movement.", diff:"easy"},
+    {term:"Actin", def:"Thin filaments involved in cell shape, motility, and muscle contraction.", diff:"medium"},
+    {term:"Microtubule", def:"Hollow polymers of tubulin that form tracks for transport and mitotic spindle.", diff:"hard"},
+    {term:"Signal Peptide", def:"Short N-terminal sequence that directs a protein to the secretory pathway.", diff:"hard"}
+  ],
+  "Genetics": [
+    {term:"Gene", def:"DNA sequence that encodes a functional product (RNA or protein).", diff:"easy"},
+    {term:"Allele", def:"One of multiple versions of a gene at a particular locus.", diff:"easy"},
+    {term:"Genotype", def:"Genetic makeup of an organism at a locus or set of loci.", diff:"easy"},
+    {term:"Phenotype", def:"Observable traits produced by genotype and environment.", diff:"easy"},
+    {term:"Homozygous", def:"Having two identical alleles at a locus.", diff:"medium"},
+    {term:"Heterozygous", def:"Having two different alleles at a locus.", diff:"medium"},
+    {term:"Linkage Disequilibrium", def:"Non-random association of alleles at different loci.", diff:"hard"},
+    {term:"Penetrance", def:"Probability that a genotype expresses its associated phenotype.", diff:"hard"},
+    {term:"Epistasis", def:"Interaction where one gene’s effect depends on another gene.", diff:"hard"},
+    {term:"CRISPR-Cas9", def:"Genome editing system using guide RNA and nuclease to cut DNA.", diff:"medium"}
+  ],
+  "Microbiology": [
+    {term:"Gram-positive", def:"Bacteria with thick peptidoglycan cell walls that retain crystal violet.", diff:"easy"},
+    {term:"Facultative Anaerobe", def:"Organism that can grow with or without oxygen.", diff:"medium"},
+    {term:"Obligate Aerobe", def:"Organism requiring oxygen for growth.", diff:"easy"},
+    {term:"Biofilm", def:"Community of microbes embedded in a protective extracellular matrix.", diff:"medium"},
+    {term:"Quorum Sensing", def:"Cell-density–dependent regulation of gene expression in bacteria.", diff:"hard"},
+    {term:"Plaque Assay", def:"Method to quantify infectious phage or viruses by forming clear zones.", diff:"hard"},
+    {term:"Endospore", def:"Dormant, tough, non-reproductive structure formed by some bacteria.", diff:"medium"},
+    {term:"LPS (Endotoxin)", def:"Outer membrane component of Gram-negatives that triggers inflammation.", diff:"hard"}
+  ],
+  "Human Anatomy & Physiology": [
+    {term:"Homeostasis", def:"Maintenance of stable internal conditions via feedback mechanisms.", diff:"easy"},
+    {term:"Action Potential", def:"Rapid membrane depolarization and repolarization in excitable cells.", diff:"medium"},
+    {term:"Sarcomere", def:"Contractile unit of striated muscle composed of actin and myosin.", diff:"medium"},
+    {term:"Alveoli", def:"Tiny lung sacs where gas exchange occurs.", diff:"easy"},
+    {term:"Nephron", def:"Functional unit of the kidney that filters blood and forms urine.", diff:"medium"},
+    {term:"Insulin", def:"Pancreatic hormone that lowers blood glucose and promotes storage.", diff:"easy"},
+    {term:"SA Node", def:"Pacemaker region initiating heartbeat in the right atrium.", diff:"hard"},
+    {term:"Blood-Brain Barrier", def:"Selective barrier formed by tight junctions and astrocytes protecting CNS.", diff:"hard"}
+  ]
+};
+
+const categorySel = document.getElementById('category');
+const difficultySel = document.getElementById('difficulty');
+const startBtn = document.getElementById('startBtn');
+const grid = document.getElementById('grid');
+const timerEl = document.getElementById('timer');
+const scoreEl = document.getElementById('score');
+const streakEl = document.getElementById('streak');
+const highScoreEl = document.getElementById('highScore');
+const pairsInfo = document.getElementById('pairsInfo');
+const toast = document.getElementById('toast');
+const endScreen = document.getElementById('endScreen');
+const finalScore = document.getElementById('finalScore');
+const finalMsg = document.getElementById('finalMsg');
+const playAgain = document.getElementById('playAgain');
+const revealAnswersBtn = document.getElementById('revealAnswers');
+const answerKey = document.getElementById('answerKey');
+
+// Populate categories
+Object.keys(DATA).forEach(k => {
+  const opt = document.createElement('option');
+  opt.value = k; opt.textContent = k;
+  categorySel.appendChild(opt);
+});
+
+let state = { pairs: [], timeLeft: 0, timerId: null, score: 0, streak: 0, selected: null };
+
+function difficultyConfig(level){
+  switch(level){
+    case 'easy': return { pairs: 6, time: 120, base: 100, penalty: 10 };
+    case 'medium': return { pairs: 8, time: 90, base: 120, penalty: 15 };
+    case 'hard': return { pairs: 10, time: 60, base: 150, penalty: 20 };
+  }
+}
+
+function selectByDifficulty(list, level, n){
+  const weight = {easy:3, medium:2, hard:1};
+  const pool = [];
+  list.forEach(item=>{
+    const w = item.diff===level?weight.easy : (level==='easy' && item.diff==='hard'?1: (item.diff==='medium'?2:1));
+    for(let k=0;k<w;k++) pool.push(item);
+  });
+  const uniq = new Map();
+  while(uniq.size < Math.min(n, list.length)){
+    const pick = pool[Math.floor(Math.random()*pool.length)];
+    uniq.set(pick.term, pick);
+  }
+  return Array.from(uniq.values());
+}
+
+function createCards(pairs){
+  grid.innerHTML='';
+  endScreen.classList.add('hidden');
+  const terms = pairs.map(p=>({kind:'term', text:p.term}));
+  const defs  = pairs.map(p=>({kind:'definition', text:p.def, match:p.term}));
+  const shuf = a => a.sort(()=>Math.random()-0.5);
+  shuf(terms); shuf(defs);
+  const cards = terms.concat(defs);
+  const frag = document.createDocumentFragment();
+  cards.forEach(c=>{
+    const el = document.createElement('div');
+    el.className='card '+c.kind;
+    el.textContent=c.text;
+    el.dataset.kind=c.kind;
+    if(c.kind==='definition') el.dataset.match=c.match;
+    if(c.kind==='term') el.dataset.term=c.text;
+    frag.appendChild(el);
+  });
+  grid.appendChild(frag);
+}
+
+function onCardClick(e){
+  const el = e.target.closest('.card');
+  if(!el) return;
+  if(el.classList.contains('correct')) return;
+
+  if(!state.selected){
+    state.selected = el;
+    el.classList.add('selected');
+    return;
+  }
+  if(state.selected===el) return;
+
+  const a = state.selected, b = el;
+  if(a.dataset.kind===b.dataset.kind){
+    a.classList.remove('selected');
+    state.selected = b;
+    b.classList.add('selected');
+    return;
+  }
+  const termEl = a.dataset.kind==='term'? a : b;
+  const defEl  = a.dataset.kind==='definition'? a : b;
+
+  const isMatch = defEl.dataset.match === termEl.dataset.term;
+  a.classList.remove('selected'); b.classList.remove('selected');
+  if(isMatch){
+    termEl.classList.add('correct');
+    defEl.classList.add('correct');
+    state.score += cfg.base + 10*state.streak;
+    state.streak += 1;
+    updateStats();
+    ping(`+${cfg.base + 10*(state.streak-1)} points!`);
+    if([...document.querySelectorAll('.card.term')].every(x=>x.classList.contains('correct'))){
+      endGame();
+    }
+  }else{
+    termEl.classList.add('wrong'); defEl.classList.add('wrong');
+    setTimeout(()=>{ termEl.classList.remove('wrong'); defEl.classList.remove('wrong'); }, 350);
+    state.score = Math.max(0, state.score - cfg.penalty);
+    state.streak = 0;
+    updateStats();
+    ping(`-${cfg.penalty} points`, true);
+  }
+  state.selected = null;
+}
+
+function updateStats(){
+  scoreEl.textContent = `⭐ Score: ${state.score}`;
+  streakEl.textContent = `🔥 Streak: ${state.streak}`;
+}
+
+function startTimer(seconds){
+  state.timeLeft = seconds;
+  timerEl.textContent = fmtTime(state.timeLeft);
+  clearInterval(state.timerId);
+  state.timerId = setInterval(()=>{
+    state.timeLeft -= 1;
+    timerEl.textContent = fmtTime(state.timeLeft);
+    if(state.timeLeft<=0){
+      clearInterval(state.timerId);
+      endGame();
+    }
+  }, 1000);
+}
+
+function fmtTime(s){
+  const m = Math.floor(s/60).toString().padStart(2,'0');
+  const ss = (s%60).toString().padStart(2,'0');
+  return `⏱️ ${m}:${ss}`;
+}
+
+function ping(msg, danger=false){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = danger ? 'rgba(211,75,87,.6)' : 'rgba(42,163,107,.6)';
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 900);
+}
+
+let cfg={};
+function setupGame(){
+  const category = categorySel.value;
+  const level = difficultySel.value;
+  cfg = difficultyConfig(level);
+  const chosen = selectByDifficulty(DATA[category], level, cfg.pairs);
+  state.pairs = chosen;
+  pairsInfo.textContent = `Pairs: ${chosen.length} • ${category}`;
+  state.score = 0; state.streak = 0; state.selected=null;
+  updateStats();
+  createCards(chosen);
+  startTimer(cfg.time);
+  const key = `SS_high_${category}_${level}`;
+  highScoreEl.textContent = `🏆 High: ${Number(localStorage.getItem(key)||0)}`;
+  grid.onclick = onCardClick;
+  document.getElementById('gameArea').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function endGame(){
+  grid.innerHTML='';
+  endScreen.classList.remove('hidden');
+  finalScore.textContent = `Score: ${state.score}`;
+  const key = `SS_high_${categorySel.value}_${difficultySel.value}`;
+  const prev = Number(localStorage.getItem(key)||0);
+  if(state.score > prev){
+    localStorage.setItem(key, state.score);
+    highScoreEl.textContent = `🏆 High: ${state.score}`;
+    finalMsg.textContent = "New high score! Stellar work. 🚀";
+  }else{
+    finalMsg.textContent = `High score to beat: ${prev}`;
+  }
+  answerKey.innerHTML = '<h3>Answer Key</h3>' + state.pairs.map(p=>`<div class="pill"><strong>${p.term}</strong>: ${p.def}</div>`).join(' ');
+}
+
+document.getElementById('startBtn').addEventListener('click', setupGame);
+document.getElementById('playAgain').addEventListener('click', setupGame);
+document.getElementById('revealAnswers').addEventListener('click', ()=>{
+  answerKey.classList.toggle('hidden');
+});
+
+categorySel.selectedIndex = 0;
+pairsInfo.textContent = "Pairs: — • Category: —";
+</script>
+</body>
+</html>
