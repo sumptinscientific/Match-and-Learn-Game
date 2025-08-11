@@ -1,15 +1,4 @@
-# Create an upgraded HTML that:
-# - Supports dynamic loading of curriculum from a Google Sheet CSV URL
-# - Restores original subjects + adds new subjects
-# - Provides working WebAudio ding/buzzer for correct/incorrect and click/select
-# - Adds website (global) leaderboard via configurable Apps Script endpoint
-# - Removes the settings tip
-# - Keeps clickable footer
-# - Includes attribution display per item if present
-# Also create a CSV template users can copy into Google Sheets.
-import textwrap, json, pandas as pd, os, io
-
-html = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -738,46 +727,3 @@ document.getElementById('revealAnswers').addEventListener('click', ()=>{
 </script>
 </body>
 </html>
-"""
-
-# Write HTML file
-html_path = "/mnt/data/ss_match_game_openstax_ready.html"
-with open(html_path, "w", encoding="utf-8") as f:
-    f.write(html)
-
-# Create a CSV template
-template_rows = [
-    {
-        "subject":"Biology",
-        "topic":"Cell Structure",
-        "term":"Phospholipid bilayer",
-        "definition":"A double layer of phospholipids forming the basic structure of cell membranes.",
-        "difficulty":"easy",
-        "source":"OpenStax Biology 2e",
-        "attribution":"OpenStax, Biology 2e (CC BY 4.0) — Access for free at openstax.org/books/biology-2e"
-    },
-    {
-        "subject":"Physics",
-        "topic":"Kinematics",
-        "term":"Displacement",
-        "definition":"The change in position of an object; a vector quantity.",
-        "difficulty":"easy",
-        "source":"OpenStax College Physics",
-        "attribution":"OpenStax, College Physics (CC BY 4.0) — Access for free at openstax.org"
-    },
-    {
-        "subject":"Chemistry",
-        "topic":"Acid–Base",
-        "term":"pH",
-        "definition":"A measure of hydrogen ion concentration; pH = −log[H+].",
-        "difficulty":"easy",
-        "source":"OpenStax Chemistry 2e",
-        "attribution":"OpenStax, Chemistry 2e (CC BY 4.0) — Access for free at openstax.org"
-    },
-]
-
-df = pd.DataFrame(template_rows)
-csv_path = "/mnt/data/ss_game_curriculum_template.csv"
-df.to_csv(csv_path, index=False)
-
-html_path, csv_path
