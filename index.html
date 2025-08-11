@@ -1,4 +1,15 @@
-<!DOCTYPE html>
+# Create an upgraded HTML that:
+# - Supports dynamic loading of curriculum from a Google Sheet CSV URL
+# - Restores original subjects + adds new subjects
+# - Provides working WebAudio ding/buzzer for correct/incorrect and click/select
+# - Adds website (global) leaderboard via configurable Apps Script endpoint
+# - Removes the settings tip
+# - Keeps clickable footer
+# - Includes attribution display per item if present
+# Also create a CSV template users can copy into Google Sheets.
+import textwrap, json, pandas as pd, os, io
+
+html = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -200,7 +211,7 @@
       </div>
 
       <div style="margin-top:10px">
-        <h3 style="margin:.2rem 0">Device Leaderboard</h3>
+        <h3 style="margin:.2rem 0">Leaderboard (website)</h3>
         <div id="leaderboard" class="muted" style="font-size:.95rem"></div>
       </div>
     </section>
@@ -256,159 +267,150 @@
       <option value="cream">Cream</option>
     </select>
   </div>
-  <p class="muted" style="margin-top:10px">Tip: For a global leaderboard or live head‑to‑head, connect to a tiny backend (Google Sheets + Apps Script works). See code comment near endGame().</p>
 </aside>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
-/* -------------------- SOUND: clicks & selections -------------------- */
-const SFX = {
-  click:  new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAAAAAD///8AAP8AAAAAAAA='),
-  select: new Audio('data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAAAAACAgICAgP///wAA'),
-  correct:new Audio('data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAAAAACAgICA/////w8P'),
-  wrong:  new Audio('data:audio/wav;base64,UklGRkQAAABXQVZFZm10 IBAAAAABAAEAESsAACJWAAACABYAAAAAAACAgP///wAAAP///w8P'),
-  tick:   new Audio('data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAAAAACAgICAgICAgICA'),
-  end:    new Audio('data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAAAAACAgP8AAP8A//////8AAA==')
-};
-Object.values(SFX).forEach(a => a.volume = 0.25);
-function playSfx(name){
-  if(!document.getElementById('soundToggle').checked) return;
-  const a = SFX[name]; if(!a) return; a.currentTime=0; a.play().catch(()=>{});
+/* ======= CONFIG =======
+   Provide a Google Sheet CSV URL (published) for curriculum, like:
+   https://docs.google.com/spreadsheets/d/XXXX/export?format=csv
+   Columns required: subject,topic,term,definition,difficulty,source,attribution
+*/
+const SHEET_CSV_URL = ""; // <= paste your published CSV URL here
+
+/* Global leaderboard endpoint (Google Apps Script web app URL) */
+const LEADERBOARD_URL = ""; // <= paste your Apps Script URL when ready
+
+/* ======= SOUND via WebAudio ======= */
+let audioCtx = null;
+function ensureAudio(){
+  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+}
+function tone(freq=440, dur=0.12, type='sine', gain=0.12){
+  ensureAudio();
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.value = gain;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime + dur);
+}
+function ding(){
+  // little arpeggio
+  tone(523.25,0.09,'sine',0.12);
+  setTimeout(()=>tone(659.25,0.09,'sine',0.12), 90);
+  setTimeout(()=>tone(783.99,0.11,'sine',0.12), 180);
+}
+function buzz(){
+  tone(120,0.18,'square',0.09);
+  setTimeout(()=>tone(100,0.18,'square',0.08), 120);
+}
+function tick(){
+  tone(800,0.05,'triangle',0.06);
 }
 
-/* Global click/selection sounds */
+/* SFX toggles */
+function playDing(){ if(document.getElementById('soundToggle').checked) ding(); }
+function playBuzz(){ if(document.getElementById('soundToggle').checked) buzz(); }
+function playTick(){ if(document.getElementById('soundToggle').checked) tick(); }
+function playClick(){ if(document.getElementById('soundToggle').checked) tone(420,0.04,'sine',0.05); }
+function playSelect(){ if(document.getElementById('soundToggle').checked) tone(520,0.05,'triangle',0.06); }
+
 document.addEventListener('click', e => {
-  const t = e.target;
-  const isInteractive = t.closest('button, .card, a, .closebtn');
-  if(isInteractive) playSfx('click');
+  const isInteractive = e.target.closest('button, .card, a, .closebtn, select');
+  if(isInteractive) playClick();
 });
 document.addEventListener('change', e => {
-  if(e.target.matches('select,input[type="range"],input[type="checkbox"]')) playSfx('select');
+  if(e.target.matches('select,input[type="range"],input[type="checkbox"]')) playSelect();
 });
 
-/* ------------------------ DATA ENGINE ------------------------
-   We ensure each required subject has >=20 topics and each topic has >=20 terms.
-   For now, we auto-generate sensible placeholders to satisfy the count so you can deploy
-   immediately; we can swap in curated packs next.
-----------------------------------------------------------------*/
-const REQUIRED_SUBJECTS = ["Biology","Physics","Chemistry","Organic Chemistry","Nutrition","Psychology"];
-const BASE_DATA = {
-  "Biology": {
-    "Cell Biology":[
-      ["Organelle","Specialized structure within a cell that performs a function.","easy"],
-      ["Plasma Membrane","Phospholipid bilayer that controls entry/exit.","easy"],
-      ["ATP","Primary energy currency of the cell.","easy"],
-      ["Mitosis","Division of the nucleus into two identical nuclei.","medium"],
-      ["Meiosis","Cell division producing haploid gametes.","medium"]
-    ],
-    "Genetics":[
-      ["Gene","DNA sequence that encodes a functional product.","easy"],
-      ["Allele","Alternative version of a gene.","easy"],
-      ["Phenotype","Observable traits of an organism.","easy"],
-      ["Genotype","Genetic makeup of an organism.","easy"],
-      ["Epistasis","Interaction where one gene affects another.","hard"]
-    ],
-    "Neuroscience":[
-      ["Neuron","Electrically excitable cell that processes information.","easy"],
-      ["Synapse","Junction where neurons communicate.","easy"],
-      ["Action Potential","Rapid change in membrane potential.","medium"],
-      ["Neurotransmitter","Chemical messenger released by neurons.","easy"],
-      ["LTP","Long‑term potentiation strengthens synapses.","hard"]
-    ]
-  },
-  "Physics": {
-    "Kinematics":[
-      ["Velocity","Rate of change of displacement.","easy"],
-      ["Acceleration","Rate of change of velocity.","easy"],
-      ["Projectile Motion","Motion under constant acceleration and gravity.","medium"]
-    ],
-    "Thermodynamics":[
-      ["Entropy","Measure of disorder or number of microstates.","hard"],
-      ["Enthalpy","Heat content at constant pressure.","medium"]
-    ]
-  },
-  "Chemistry": {
-    "Stoichiometry":[
-      ["Mole","6.022×10^23 entities.","easy"],
-      ["Limiting Reagent","Reactant consumed first limiting product.","medium"]
-    ],
-    "Equilibrium":[
-      ["Le Châtelier’s Principle","System shifts to counteract stress.","medium"],
-      ["K_eq","Equilibrium constant for a reaction.","medium"]
-    ]
-  },
-  "Organic Chemistry": {
-    "Functional Groups":[
-      ["Alcohol","-OH functional group.","easy"],
-      ["Carbonyl","C=O functional group.","easy"]
-    ],
-    "Mechanisms":[
-      ["SN1","Two‑step nucleophilic substitution via carbocation.","hard"],
-      ["SN2","One‑step back‑side attack, inversion of configuration.","hard"]
-    ]
-  },
-  "Nutrition": {
-    "Macronutrients":[
-      ["Carbohydrates","Primary energy source; 4 kcal/g.","easy"],
-      ["Proteins","Amino acid polymers for structure and function.","easy"],
-      ["Fats","Dense energy storage; 9 kcal/g.","easy"]
-    ]
-  },
-  "Psychology": {
-    "Learning":[
-      ["Classical Conditioning","Learning via association between stimuli.","easy"],
-      ["Operant Conditioning","Learning via reinforcement and punishment.","easy"]
-    ],
-    "Memory":[
-      ["Working Memory","Short‑term active processing of information.","medium"],
-      ["Long‑Term Memory","Durable storage of information.","easy"]
-    ]
-  }
-};
+/* ======= Default built-in dataset =======
+   Restores original subjects (Cell Biology, Genetics, Microbiology, Human Anatomy & Physiology, Biochemistry, Ecology, Neuroscience)
+   and adds: Biology, Physics, Chemistry, Organic Chemistry, Nutrition, Psychology.
+   This is minimal seed data to run immediately.
+*/
+const BUILTIN = [
+  // Original subjects (seed)
+  {subject:"Cell Biology", topic:"Organelles", term:"Mitochondrion", definition:"Organelle producing ATP via oxidative phosphorylation.", difficulty:"easy"},
+  {subject:"Cell Biology", topic:"Cytoskeleton", term:"Microtubule", definition:"Hollow polymers forming mitotic spindle and transport tracks.", difficulty:"hard"},
+  {subject:"Genetics", topic:"Basics", term:"Gene", definition:"DNA sequence encoding a functional product.", difficulty:"easy"},
+  {subject:"Microbiology", topic:"Bacteria", term:"Gram‑positive", definition:"Thick peptidoglycan cell wall; retains crystal violet.", difficulty:"easy"},
+  {subject:"Human Anatomy & Physiology", topic:"Neuro", term:"Action Potential", definition:"Rapid depolarization/repolarization in excitable cells.", difficulty:"medium"},
+  {subject:"Biochemistry", topic:"Metabolism", term:"Glycolysis", definition:"Pathway converting glucose to pyruvate with ATP gain.", difficulty:"easy"},
+  {subject:"Ecology", topic:"Communities", term:"Keystone Species", definition:"Species with disproportionate effect on community structure.", difficulty:"medium"},
+  {subject:"Neuroscience", topic:"Cells", term:"Neuron", definition:"Electrically excitable cell that processes information.", difficulty:"easy"},
 
-/* Expand to 20 topics and 20 terms each (placeholders appended) */
-function expandCurriculum(base){
-  const result = {};
-  for(const subj of REQUIRED_SUBJECTS){
-    const subjObj = base[subj] ? {...base[subj]} : {};
-    // ensure 20 topics
-    const currentTopics = Object.keys(subjObj);
-    for(let i=currentTopics.length+1; i<=20; i++){
-      subjObj[`${subj} Topic ${String(i).padStart(2,'0')}`] = [];
-    }
-    // ensure each topic has >=20 terms
-    for(const topic of Object.keys(subjObj)){
-      const arr = subjObj[topic];
-      for(let j=arr.length+1; j<=20; j++){
-        const term = `${topic} Term ${String(j).padStart(2,'0')}`;
-        const def  = `Key idea in ${subj} — ${topic.toLowerCase()}: concept #${j}.`;
-        arr.push([term, def, j<=7 ? "easy" : (j<=14 ? "medium" : "hard")]);
-      }
-      subjObj[topic] = arr;
-    }
-    result[subj] = subjObj;
-  }
-  return result;
-}
-const CURRICULUM = expandCurriculum(BASE_DATA);
+  // New required subjects (seed)
+  {subject:"Biology", topic:"Cell Cycle", term:"Mitosis", definition:"Division of nucleus yielding identical daughter nuclei.", difficulty:"medium", attribution:"OpenStax Biology 2e (CC BY 4.0)", source:"openstax.org"},
+  {subject:"Physics", topic:"Kinematics", term:"Velocity", definition:"Rate of change of displacement.", difficulty:"easy"},
+  {subject:"Chemistry", topic:"Equilibrium", term:"Le Châtelier’s Principle", definition:"System shifts to counteract imposed change.", difficulty:"medium"},
+  {subject:"Organic Chemistry", topic:"Mechanisms", term:"SN2", definition:"Bimolecular substitution with backside attack, inversion.", difficulty:"hard"},
+  {subject:"Nutrition", topic:"Macronutrients", term:"Protein", definition:"Amino acid polymers; 4 kcal/g; structural and functional roles.", difficulty:"easy"},
+  {subject:"Psychology", topic:"Learning", term:"Classical Conditioning", definition:"Learning via association between stimuli.", difficulty:"easy"}
+];
 
-/* Build a flat list format used by the game engine */
-function buildSubjectData(subjectName){
-  const topicMap = CURRICULUM[subjectName];
-  const list = [];
-  for(const [topic, pairs] of Object.entries(topicMap)){
-    for(const [term, def, diff] of pairs){
-      list.push({term, def, diff, topics:[topic]});
+/* ======= Curriculum loading ======= */
+let DATA = {}; // subject -> list of {term,def,difficulty,topics:[topic], attribution, source}
+async function loadCurriculum(){
+  if(SHEET_CSV_URL){
+    try{
+      const res = await fetch(SHEET_CSV_URL, {cache:'no-store'});
+      const text = await res.text();
+      DATA = csvToData(text);
+      if(Object.keys(DATA).length) return;
+    }catch(e){
+      console.warn("CSV load failed, falling back to built-in", e);
     }
   }
-  return list;
+  // Fallback to built-in
+  DATA = {};
+  for(const row of BUILTIN){
+    if(!DATA[row.subject]) DATA[row.subject] = [];
+    DATA[row.subject].push({
+      term: row.term, def: row.definition, diff: row.difficulty || 'medium',
+      topics: [row.topic || 'General'], attribution: row.attribution||"", source: row.source||""
+    });
+  }
 }
 
-const DATA = {};
-REQUIRED_SUBJECTS.forEach(s => DATA[s] = buildSubjectData(s));
+/* CSV to internal data */
+function csvToData(csv){
+  const lines = csv.split(/\r?\n/).filter(Boolean);
+  const header = lines.shift().split(',').map(h=>h.trim().toLowerCase());
+  const idx = (name)=>header.indexOf(name);
+  const m = {};
+  for(const ln of lines){
+    const cells = splitCsvLine(ln);
+    const subject = (cells[idx('subject')]||'').trim();
+    const topic = (cells[idx('topic')]||'General').trim();
+    const term = (cells[idx('term')]||'').trim();
+    const definition = (cells[idx('definition')]||'').trim();
+    const difficulty = (cells[idx('difficulty')]||'medium').trim().toLowerCase();
+    const source = (cells[idx('source')]||'').trim();
+    const attribution = (cells[idx('attribution')]||'').trim();
+    if(!subject || !term || !definition) continue;
+    if(!m[subject]) m[subject] = [];
+    m[subject].push({term, def:definition, diff:difficulty, topics:[topic], source, attribution});
+  }
+  return m;
+}
+function splitCsvLine(line){
+  const out=[]; let cur=""; let inQ=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='\"'){
+      if(inQ && line[i+1]==='\"'){ cur+='\"'; i++; }
+      else inQ=!inQ;
+    }else if(ch===',' && !inQ){ out.push(cur); cur=""; }
+    else cur+=ch;
+  }
+  out.push(cur);
+  return out;
+}
 
-/* ---------------------- Utility helpers ---------------------- */
+/* ======= UI bindings & engine (similar to previous version) ======= */
 const subjectSel = document.getElementById('subject');
 const topicSel = document.getElementById('topic');
 const difficultySel = document.getElementById('difficulty');
@@ -438,6 +440,14 @@ const timeMultLabel = document.getElementById('timeMultLabel');
 const themeAccent = document.getElementById('themeAccent');
 const leaderEl = document.getElementById('leaderboard');
 
+/* Settings drawer */
+function openDrawer(){ drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false'); overlay.classList.add('show'); }
+function closeDrawer(){ drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); overlay.classList.remove('show'); }
+settingsBtn.addEventListener('click', openDrawer);
+closeDrawerBtn.addEventListener('click', closeDrawer);
+overlay.addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDrawer(); });
+
 /* Theme accent */
 themeAccent.addEventListener('change', () => {
   document.documentElement.style.setProperty('--mint',
@@ -452,32 +462,47 @@ shareBtn.addEventListener('click', async () => {
   const title = "Sumptin’ Scientific — Match & Learn";
   const text = "Test your science knowledge in this quick, fun matching game!";
   if (navigator.share){
-    try{ await navigator.share({title, text, url}); }catch(e){/* user cancelled */}
+    try{ await navigator.share({title, text, url}); }catch(e){}
   }else{
-    try{
-      await navigator.clipboard.writeText(url);
-      ping("Link copied to clipboard!");
-    }catch{ ping("Share this link: "+url); }
+    try{ await navigator.clipboard.writeText(url); ping("Link copied to clipboard!"); }
+    catch{ ping("Share this link: "+url); }
   }
 });
 
-/* Settings drawer open/close improvements */
-function openDrawer(){
-  drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false');
-  overlay.classList.add('show');
-}
-function closeDrawer(){
-  drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true');
-  overlay.classList.remove('show');
-}
-settingsBtn.addEventListener('click', openDrawer);
-closeDrawerBtn.addEventListener('click', closeDrawer);
-overlay.addEventListener('click', closeDrawer);
-document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDrawer(); });
+/* Core game state */
+let state = { pairs: [], timeLeft: 0, timerId: null, score: 0, streak: 0, selected: null };
+let cfg = {};
 
-/* Populate subjects and topics */
-function initSubjects(){
-  Object.keys(DATA).forEach(k => {
+/* Difficulty config */
+function difficultyConfig(level){
+  switch(level){
+    case 'easy': return { base: 100, penalty: 10, timePerPair: 18 };
+    case 'medium': return { base: 120, penalty: 15, timePerPair: 11 };
+    case 'hard': return { base: 150, penalty: 20, timePerPair: 7 };
+  }
+}
+
+/* Selection helpers */
+function selectPairs(list, level, n, topic){
+  const filtered = (topic && topic!=='all') ? list.filter(i => (i.topics||[]).includes(topic)) : list.slice();
+  const weight = {easy:3, medium:2, hard:1};
+  const pool = [];
+  filtered.forEach(item=>{
+    const w = item.diff===level ? weight.easy : (item.diff==='medium'?2:1);
+    for(let k=0;k<w;k++) pool.push(item);
+  });
+  const uniq = new Map();
+  while(uniq.size < Math.min(n, filtered.length)){
+    const pick = pool[Math.floor(Math.random()*pool.length)] || filtered[Math.floor(Math.random()*filtered.length)];
+    uniq.set(pick.term+"|"+(pick.topics?pick.topics[0]:""), pick);
+  }
+  return Array.from(uniq.values());
+}
+
+/* Build UI */
+function populateSubjects(){
+  subjectSel.innerHTML = "";
+  Object.keys(DATA).sort().forEach(k => {
     const opt = document.createElement('option');
     opt.value = k; opt.textContent = k;
     subjectSel.appendChild(opt);
@@ -498,40 +523,13 @@ function refreshTopics(){
 }
 subjectSel.addEventListener('change', refreshTopics);
 
-/* Core game state */
-let state = { pairs: [], timeLeft: 0, timerId: null, score: 0, streak: 0, selected: null };
-let cfg = {};
-
-function difficultyConfig(level){
-  switch(level){
-    case 'easy': return { base: 100, penalty: 10, timePerPair: 18 };
-    case 'medium': return { base: 120, penalty: 15, timePerPair: 11 };
-    case 'hard': return { base: 150, penalty: 20, timePerPair: 7 };
-  }
-}
-function selectPairs(list, level, n, topic){
-  const filtered = (topic && topic!=='all') ? list.filter(i => (i.topics||[]).includes(topic)) : list.slice();
-  // weight by difficulty proximity
-  const weight = {easy:3, medium:2, hard:1};
-  const pool = [];
-  filtered.forEach(item=>{
-    const w = item.diff===level ? weight.easy : (item.diff==='medium'?2:1);
-    for(let k=0;k<w;k++) pool.push(item);
-  });
-  // unique picks
-  const uniq = new Map();
-  while(uniq.size < Math.min(n, filtered.length)){
-    const pick = pool[Math.floor(Math.random()*pool.length)] || filtered[Math.floor(Math.random()*filtered.length)];
-    uniq.set(pick.term, pick);
-  }
-  return Array.from(uniq.values());
-}
-
+/* Cards */
+const gridEl = document.getElementById('grid');
 function createCards(pairs){
-  grid.innerHTML='';
+  gridEl.innerHTML='';
   endScreen.classList.add('hidden');
   const terms = pairs.map(p=>({kind:'term', text:p.term}));
-  const defs  = pairs.map(p=>({kind:'definition', text:p.def, match:p.term}));
+  const defs  = pairs.map(p=>({kind:'definition', text:p.def, match:p.term, attribution:p.attribution||'', source:p.source||''}));
   const shuf = a => a.sort(()=>Math.random()-0.5);
   shuf(terms); shuf(defs);
   const cards = terms.concat(defs);
@@ -541,12 +539,12 @@ function createCards(pairs){
     el.className='card '+c.kind;
     el.textContent=c.text;
     el.dataset.kind=c.kind;
-    if(c.kind==='definition') el.dataset.match=c.match;
+    if(c.kind==='definition'){ el.dataset.match=c.match; if(c.attribution) el.title = c.attribution; }
     if(c.kind==='term') el.dataset.term=c.text;
-    el.addEventListener('click', ()=> playSfx('click'));
+    el.addEventListener('click', ()=> playClick());
     frag.appendChild(el);
   });
-  grid.appendChild(frag);
+  gridEl.appendChild(frag);
 }
 
 function onCardClick(e){
@@ -579,7 +577,7 @@ function onCardClick(e){
     state.score += cfg.base + 10*state.streak;
     state.streak += 1;
     updateStats();
-    playSfx('correct');
+    playDing();
     ping(`+${cfg.base + 10*(state.streak-1)} points!`);
     if([...document.querySelectorAll('.card.term')].every(x=>x.classList.contains('correct'))){
       endGame();
@@ -590,7 +588,7 @@ function onCardClick(e){
     state.score = Math.max(0, state.score - cfg.penalty);
     state.streak = 0;
     updateStats();
-    playSfx('wrong');
+    playBuzz();
     ping(`-${cfg.penalty} points`, true);
   }
   state.selected = null;
@@ -607,7 +605,7 @@ function startTimer(totalSeconds){
   clearInterval(state.timerId);
   state.timerId = setInterval(()=>{
     state.timeLeft -= 1;
-    if(state.timeLeft<=5) playSfx('tick');
+    if(state.timeLeft<=5) playTick();
     timerEl.textContent = fmtTime(state.timeLeft);
     if(state.timeLeft<=0){
       clearInterval(state.timerId);
@@ -630,27 +628,35 @@ function ping(msg, danger=false){
   setTimeout(()=>t.classList.remove('show'), 900);
 }
 
-/* Local storage keys */
+/* High score (per subject/topic/difficulty) */
 function keyHigh(subj, level, topic){ return `SS_high_${subj}_${level}_${topic||'all'}`; }
 function keyStreak(subj, level, topic){ return `SS_beststreak_${subj}_${level}_${topic||'all'}`; }
-function keyHistory(){ return `SS_history`; }
 
 function updateHighUI(subj, level, topic){
   const hs = Number(localStorage.getItem(keyHigh(subj, level, topic))||0);
   highScoreEl.textContent = `🏆 High: ${hs}`;
 }
-function pushHistory(entry){
-  const arr = JSON.parse(localStorage.getItem(keyHistory())||'[]');
-  arr.unshift(entry);
-  if(arr.length>20) arr.length = 20;
-  localStorage.setItem(keyHistory(), JSON.stringify(arr));
-  renderLeaderboard(arr);
+
+/* Leaderboard (website) – requires LEADERBOARD_URL */
+async function postLeaderboard(entry){
+  if(!LEADERBOARD_URL) return;
+  try{
+    await fetch(LEADERBOARD_URL, {
+      method:'POST',
+      mode:'cors',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(entry)
+    });
+  }catch(e){ console.warn('Leaderboard post failed', e); }
 }
-function renderLeaderboard(arr){
-  const data = arr || JSON.parse(localStorage.getItem(keyHistory())||'[]');
-  leaderEl.innerHTML = data.length ?
-    data.map(e=>`<div class="pill">${e.date} • ${e.subj}${e.topic!=='all'?'/'+e.topic:''} • ${e.level} • Score ${e.score} • Streak ${e.streak}</div>`).join(' ')
-    : '<span class="muted">No scores yet — start a game!</span>';
+async function loadLeaderboard(){
+  if(!LEADERBOARD_URL){ leaderEl.innerHTML = '<span class="muted">Global leaderboard pending setup.</span>'; return; }
+  try{
+    const res = await fetch(LEADERBOARD_URL+'?mode=read', {cache:'no-store'});
+    const rows = await res.json();
+    if(!rows || !rows.length){ leaderEl.innerHTML = '<span class="muted">No scores yet.</span>'; return; }
+    leaderEl.innerHTML = rows.slice(0,20).map(r=>`<div class="pill">${r.date} • ${r.subject}${r.topic?'/'+r.topic:''} • ${r.level} • ${r.name||'Player'} • ${r.score}</div>`).join(' ');
+  }catch(e){ leaderEl.innerHTML = '<span class="muted">Leaderboard unavailable.</span>'; }
 }
 
 /* Start/setup */
@@ -674,7 +680,7 @@ function setupGame(){
   document.getElementById('gameArea').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
-function endGame(){
+async function endGame(){
   grid.innerHTML='';
   endScreen.classList.remove('hidden');
   finalScore.textContent = `Score: ${state.score}`;
@@ -696,23 +702,22 @@ function endGame(){
     localStorage.setItem(kS, state.streak);
   }
   updateHighUI(subj, level, topic);
-  answerKey.innerHTML = '<h3>Answer Key</h3>' + state.pairs.map(p=>`<div class="pill"><strong>${p.term}</strong>: ${p.def}</div>`).join(' ');
-  playSfx('end');
+  // Answer key with attributions (if present)
+  answerKey.innerHTML = '<h3>Answer Key</h3>' + state.pairs.map(p=>`<div class="pill"><strong>${p.term}</strong>: ${p.def}${p.attribution?` — <em>${p.attribution}</em>`:''}</div>`).join(' ');
+  playDing(); // finish sound
 
-  // Save history (device-only leaderboard)
+  // Website leaderboard entry
   const now = new Date();
-  pushHistory({
-    date: now.toLocaleDateString(),
-    subj, topic, level,
-    score: state.score,
-    streak: state.streak
+  await postLeaderboard({
+    date: now.toISOString().slice(0,10),
+    subject: subj, topic: topic==='all'?'':topic, level,
+    score: state.score, streak: state.streak,
+    name: "", // optional: prompt or set from local profile
+    userAgent: navigator.userAgent
   });
 
-  /* Global leaderboard / Versus mode (Optional backend)
-     - Build a Google Apps Script endpoint (Web app) with doPost(e) to append rows to a Sheet.
-     - fetch(ENDPOINT, {method:'POST', body: JSON.stringify({...})})
-     - Use Ably/Pusher/Socket.io for matchmaking & real-time turns.
-  */
+  // refresh leaderboard
+  loadLeaderboard();
 }
 
 /* Events */
@@ -722,33 +727,57 @@ document.getElementById('revealAnswers').addEventListener('click', ()=>{
   answerKey.classList.toggle('hidden');
 });
 
-/* Init */
-function init(){
-  // subjects
-  Object.keys(DATA).forEach(k => {
-    const opt = document.createElement('option');
-    opt.value = k; opt.textContent = k;
-    subjectSel.appendChild(opt);
-  });
-  subjectSel.value = "Biology";
+/* Init flow */
+(async function init(){
+  await loadCurriculum();
+  populateSubjects();
   refreshTopics();
-  renderLeaderboard();
+  loadLeaderboard();
   pairsInfo.textContent = "Pairs: — • Subject: —";
-}
-function refreshTopics(){
-  topicSel.innerHTML = '<option value="all">All topics</option>';
-  const subj = subjectSel.value;
-  const topicSet = new Set();
-  (DATA[subj] || []).forEach(item => (item.topics||[]).forEach(t=>topicSet.add(t)));
-  Array.from(topicSet).sort().forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t; opt.textContent = t;
-    topicSel.appendChild(opt);
-  });
-}
-subjectSel.addEventListener('change', refreshTopics);
-
-init();
+})();
 </script>
 </body>
 </html>
+"""
+
+# Write HTML file
+html_path = "/mnt/data/ss_match_game_openstax_ready.html"
+with open(html_path, "w", encoding="utf-8") as f:
+    f.write(html)
+
+# Create a CSV template
+template_rows = [
+    {
+        "subject":"Biology",
+        "topic":"Cell Structure",
+        "term":"Phospholipid bilayer",
+        "definition":"A double layer of phospholipids forming the basic structure of cell membranes.",
+        "difficulty":"easy",
+        "source":"OpenStax Biology 2e",
+        "attribution":"OpenStax, Biology 2e (CC BY 4.0) — Access for free at openstax.org/books/biology-2e"
+    },
+    {
+        "subject":"Physics",
+        "topic":"Kinematics",
+        "term":"Displacement",
+        "definition":"The change in position of an object; a vector quantity.",
+        "difficulty":"easy",
+        "source":"OpenStax College Physics",
+        "attribution":"OpenStax, College Physics (CC BY 4.0) — Access for free at openstax.org"
+    },
+    {
+        "subject":"Chemistry",
+        "topic":"Acid–Base",
+        "term":"pH",
+        "definition":"A measure of hydrogen ion concentration; pH = −log[H+].",
+        "difficulty":"easy",
+        "source":"OpenStax Chemistry 2e",
+        "attribution":"OpenStax, Chemistry 2e (CC BY 4.0) — Access for free at openstax.org"
+    },
+]
+
+df = pd.DataFrame(template_rows)
+csv_path = "/mnt/data/ss_game_curriculum_template.csv"
+df.to_csv(csv_path, index=False)
+
+html_path, csv_path
